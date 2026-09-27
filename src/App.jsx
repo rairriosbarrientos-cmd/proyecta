@@ -10,6 +10,7 @@ import {
 } from './ui.jsx';
 import { Logo, NombreMarca } from './Marca.jsx';
 import { aplicarCambios } from './nube/fusion.js';
+import { MI_EMPRESA_ID, MiEmpresaSheet, abrirWhatsApp, BotonWhatsApp } from './MiEmpresa.jsx';
 import {
   CATALOGO_ID, esCotizacion, normalizarCatalogo, calcularPropuesta, totalCotizacion, honorariosPorObra, siguienteFolio, vence, isoDe, aprenderServicios,
 } from './cotizaciones/calculo.js';
@@ -75,6 +76,8 @@ export default function App({ nube, cuenta }) {
   useEffect(() => { if (cargado) nube.actualizar(registros); }, [registros, cargado, nube]);
 
   const guardado = registros.find((r) => r.id === CATALOGO_ID);
+  const miEmpresa = registros.find((r) => r.id === MI_EMPRESA_ID);
+  const [verEmpresa, setVerEmpresa] = useState(false);
   const catalogo = useMemo(() => normalizarCatalogo(guardado), [guardado]);
   const propuestas = registros.filter(esCotizacion);
   const guardar = (r) => setRegistros((prev) => (prev.some((p) => p.id === r.id) ? prev.map((p) => (p.id === r.id ? r : p)) : [...prev, r]));
@@ -87,17 +90,17 @@ export default function App({ nube, cuenta }) {
   if (vista.tipo === 'catalogo') {
     pantalla = <CatalogoView catalogo={catalogo} onGuardar={guardar} onBack={() => setVista({ tipo: 'lista' })} />;
   } else if (vista.tipo === 'pdf' && actual) {
-    pantalla = <PropuestaPDF c={actual} cuenta={cuenta} onBack={() => setVista({ tipo: 'editar', id: actual.id })} />;
+    pantalla = <PropuestaPDF c={actual} cuenta={cuenta} marca={miEmpresa} onMarca={() => setVerEmpresa(true)} onBack={() => setVista({ tipo: 'editar', id: actual.id })} />;
   } else if (vista.tipo === 'editar' && actual) {
     pantalla = (
-      <EditorPropuesta c={actual} catalogo={catalogo} onGuardar={guardar} onBack={() => setVista({ tipo: 'lista' })} onPDF={() => setVista({ tipo: 'pdf', id: actual.id })}
+      <EditorPropuesta c={actual} catalogo={catalogo} firma={miEmpresa?.nombre || cuenta?.empresa} onGuardar={guardar} onBack={() => setVista({ tipo: 'lista' })} onPDF={() => setVista({ tipo: 'pdf', id: actual.id })}
         onAprender={(p) => guardar(aprenderServicios(catalogo, p, uid))}
         onBorrar={() => { borrar(actual.id); setVista({ tipo: 'lista' }); }}
         onDuplicar={() => { const copia = { ...actual, id: uid(), folio: siguienteFolio(registros), estado: 'borrador', fecha: hoy() }; guardar(copia); setVista({ tipo: 'editar', id: copia.id }); }} />
     );
   } else {
     pantalla = (
-      <Inicio propuestas={propuestas} catalogo={catalogo} cuenta={cuenta}
+      <Inicio propuestas={propuestas} catalogo={catalogo} cuenta={cuenta} miEmpresa={miEmpresa} onEmpresa={() => setVerEmpresa(true)}
         onAbrir={(id) => setVista({ tipo: 'editar', id })} onCatalogo={() => setVista({ tipo: 'catalogo' })}
         onNueva={() => { const c = nuevaPropuesta(registros); guardar(c); setVista({ tipo: 'editar', id: c.id }); }} />
     );
@@ -106,6 +109,7 @@ export default function App({ nube, cuenta }) {
     <div className="min-h-screen app-raiz" style={{ background: COLORS.bg, fontFamily: FONT_SANS }}>
       <ChipCuenta cuenta={cuenta} sync={sync} />
       <div className="max-w-3xl mx-auto">{pantalla}</div>
+      {verEmpresa && <MiEmpresaSheet datos={miEmpresa} empresa={cuenta?.empresa} onClose={() => setVerEmpresa(false)} onGuardar={(d) => { guardar(d); setVerEmpresa(false); }} />}
     </div>
   );
 }
@@ -132,7 +136,7 @@ function ChipCuenta({ cuenta, sync }) {
 
 const FILTROS = [['todas', 'Todas'], ['borrador', 'Borrador'], ['enviada', 'Enviadas'], ['aceptada', 'Aceptadas'], ['rechazada', 'Rechazadas']];
 
-function Inicio({ propuestas, catalogo, cuenta, onAbrir, onCatalogo, onNueva }) {
+function Inicio({ propuestas, catalogo, cuenta, miEmpresa, onEmpresa, onAbrir, onCatalogo, onNueva }) {
   const [filtro, setFiltro] = useState('todas');
   const [busca, setBusca] = useState('');
   const suma = (estado) => propuestas.filter((c) => c.estado === estado).reduce((s, c) => s + totalCotizacion(c), 0);
@@ -168,6 +172,16 @@ function Inicio({ propuestas, catalogo, cuenta, onAbrir, onCatalogo, onNueva }) 
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-bold" style={{ fontFamily: FONT_SLAB, color: COLORS.ink }}>Mis servicios y precios</p>
             <p className="text-[12px]" style={{ color: COLORS.inkSoft }}>{catalogo.servicios.length ? plural(catalogo.servicios.length, 'servicio') : 'Se llena solo con lo que cotizas'}</p>
+          </div>
+          <ChevronRight size={18} color={COLORS.inkFaint} />
+        </button>
+        <button onClick={onEmpresa} className="w-full rounded-2xl p-4 flex items-center gap-3 text-left" style={{ background: COLORS.paper, boxShadow: CARD_SHADOW, border: miEmpresa?.logo ? 'none' : `1.5px dashed ${COLORS.accent}` }}>
+          {miEmpresa?.logo
+            ? <div className="rounded-xl p-1 flex items-center justify-center shrink-0" style={{ width: 44, height: 44, background: '#fff', border: `1px solid ${COLORS.line}` }}><img src={miEmpresa.logo} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /></div>
+            : <div className="rounded-xl p-2.5" style={{ background: '#EFEDFE' }}><Building2 size={20} color={COLORS.accent} /></div>}
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-bold" style={{ fontFamily: FONT_SLAB, color: COLORS.ink }}>{miEmpresa?.logo ? 'Tu despacho en el PDF' : 'Pon tu logo en el PDF'}</p>
+            <p className="text-[12px] truncate" style={{ color: COLORS.inkSoft }}>{miEmpresa ? [miEmpresa.nombre, miEmpresa.telefono].filter(Boolean).join(' · ') : 'Logo, teléfono y correo en cada propuesta'}</p>
           </div>
           <ChevronRight size={18} color={COLORS.inkFaint} />
         </button>
@@ -247,7 +261,7 @@ function BorrarConfirmado({ onBorrar, texto = 'Eliminar propuesta' }) {
 
 /* ============================= PROPUESTA ============================= */
 
-function EditorPropuesta({ c, catalogo, onGuardar, onBack, onPDF, onBorrar, onDuplicar, onAprender }) {
+function EditorPropuesta({ c, catalogo, firma, onGuardar, onBack, onPDF, onBorrar, onDuplicar, onAprender }) {
   const [editando, setEditando] = useState(null);
   const bloqueada = c.estado !== 'borrador';
   const set = (cambios) => onGuardar({ ...c, ...cambios });
@@ -279,6 +293,7 @@ function EditorPropuesta({ c, catalogo, onGuardar, onBack, onPDF, onBorrar, onDu
             {c.estado === 'enviada' && boton('Rechazada', Ban, () => cambiarEstado('rechazada'), '#FDECEA', COLORS.bad)}
             {c.estado !== 'borrador' && boton('Volver a borrador', Undo2, () => cambiarEstado('borrador'))}
             {boton('Ver PDF', Printer, onPDF, COLORS.accent, '#fff')}
+            <BotonWhatsApp onClick={() => abrirWhatsApp(`Hola${c.cliente ? ` ${c.cliente}` : ''}, te comparto la propuesta ${c.folio}${c.nombre ? ` — ${c.nombre}` : ''}.\nTotal: ${pesos(r.total)} con IVA.\nPlazo: ${c.plazoSemanas || '—'} semanas.${r.pagos.length ? `\nForma de pago: ${r.pagos.map((p) => `${cant(p.pct, 1)}% ${p.concepto.toLowerCase()}`).join(', ')}.` : ''}\nVigente hasta el ${fechaLarga(vence(c))}.\nTe envío el PDF con el detalle.${firma ? `\n\n${firma}` : ''}`)} />
             {boton('Duplicar', Copy, onDuplicar)}
           </div>
           {c.estado === 'borrador' && <BorrarConfirmado onBorrar={onBorrar} />}
@@ -448,15 +463,18 @@ function ServicioCatalogoSheet({ servicio, onClose, onSave, onBorrar }) {
 
 const renglones = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean);
 
-function PropuestaPDF({ c, cuenta, onBack }) {
+function PropuestaPDF({ c, cuenta, marca, onMarca, onBack }) {
   const r = calcularPropuesta(c);
   const datos = [['Fecha', fechaLarga(c.fecha)], ['Vigencia', `Hasta ${fechaLarga(vence(c))}`], ['Plazo', c.plazoSemanas ? `${c.plazoSemanas} semanas` : '—'], ['Folio', c.folio]];
   return (
     <div className="pb-16">
       <div className="no-print"><Header title="Vista PDF" subtitle={c.folio} onBack={onBack} /></div>
-      <div className="px-4 no-print mb-4"><PrimaryButton onClick={() => window.print()}><FileText size={17} />Guardar PDF / imprimir</PrimaryButton></div>
+      <div className="px-4 no-print mb-4">
+        {!marca?.logo && <button onClick={onMarca} className="w-full mb-3"><Note>Tu PDF sale sin logo. Toca aquí para poner el logo y los datos de tu despacho.</Note></button>}
+        <PrimaryButton onClick={() => window.print()}><FileText size={17} />Guardar PDF / imprimir</PrimaryButton>
+      </div>
       <div className="mx-3 rounded-2xl p-4 sm:p-6" style={{ background: '#fff', boxShadow: CARD_SHADOW }}>
-        <EncabezadoReporte tipo="Propuesta técnico-económica" titulo={c.nombre || c.folio} proyecto={c} cuenta={cuenta} folio={c.folio} datos={datos} />
+        <EncabezadoReporte tipo="Propuesta técnico-económica" titulo={c.nombre || c.folio} proyecto={c} cuenta={cuenta} folio={c.folio} datos={datos} marca={marca} />
         <div className="grid grid-cols-3 gap-2 mb-4">
           <KpiReporte label="Subtotal" value={pesos(r.subtotal, 0)} />
           <KpiReporte label={`IVA ${cant(c.ivaPct)}%`} value={pesos(r.iva, 0)} />
